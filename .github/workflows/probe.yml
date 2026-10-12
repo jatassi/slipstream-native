@@ -6,65 +6,28 @@ defaults:
   run:
     shell: bash
 jobs:
-  win:
+  libs:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1, 2]
+        tmp: [default, d]
     runs-on: windows-2025
     steps:
-      - shell: pwsh
+      - uses: actions/checkout@v5
+        with:
+          repository: jatassi/SlipStream
+          ref: feature/release-build-ci
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: |
+          /c/msys64/usr/bin/pacman -S --noconfirm --needed make perl
+          echo 'C:\msys64\usr\bin' >> "$GITHUB_PATH"
+      - if: matrix.tmp == 'd'
         run: |
-          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AntivirusEnabled,IsTamperProtected | Format-List
-          Get-PSDrive C,D | Format-Table
-          go version
-          where.exe zstd tar
-      - run: |
-          set -euo pipefail
-          t(){ local s=$EPOCHREALTIME; "$@"; echo "TIME $(awk "BEGIN{print $EPOCHREALTIME-$s}") :: $*"; }
-          base=https://github.com/jatassi/slipstream-native/releases/download
-          TC=layer-54ff20f1f04ae28ff335c409bb5e5963347db0a559a8e37f7df2d3624fe17d14/toolchain-windows-amd64-54ff20f1f04ae28ff335c409bb5e5963347db0a559a8e37f7df2d3624fe17d14.tar.gz
-          LB=layer-ed2d1bede921d05a45fef7344db32bed8dc4f9a4e25eca31d3df1ca0dd65c86b/libs-windows-amd64-ed2d1bede921d05a45fef7344db32bed8dc4f9a4e25eca31d3df1ca0dd65c86b.tar.gz
-          W=/d/p; mkdir -p $W/dl $W/full/tc $W/full/libs
-          t curl -sSfL -o $W/dl/tc.tar.gz "$base/$TC"
-          t curl -sSfL -o $W/dl/libs.tar.gz "$base/$LB"
-          t tar -xzf $W/dl/tc.tar.gz -C $W/full/tc
-          t tar -xzf $W/dl/libs.tar.gz -C $W/full/libs
-          cp -a $W/full $W/trim
-          cd $W/trim/tc
-          rm -rf python share busybox lib/libear lib/libscanbuild lib/clang/*/lib/linux
-          rm -f lib/clang/*/lib/windows/*-{i386,arm,aarch64}.*
-          cd bin
-          rm -f aarch64-* armv7-* i686-* arm64ec-* *uwp* lldb* liblldb.dll libpython3*.dll libffi-8.dll clangd.exe clang-tidy.exe run-clang-tidy clang-format.exe git-clang-format analyze-build intercept-build scan-build-py llvm-cov.exe llvm-profdata.exe llvm-pdbutil.exe libclang_rt.asan_dynamic-x86_64.dll libomp.dll
-          cd $W
-          echo "files full $(find full -type f | wc -l) trim $(find trim -type f | wc -l)"
-          du -sh full trim
-          t tar -cf full.tzst --use-compress-program "zstd -T0" -C full .
-          t tar -cf trim.tzst --use-compress-program "zstd -T0" -C trim .
-          ls -l *.tzst
-          C=/c/Users/runneradmin/AppData/Local
-          x(){ mkdir -p "$2"; t tar -xf $1 -P -C "$2" --force-local --use-compress-program "zstd -d"; }
-          x full.tzst $C/x-full-1
-          x full.tzst /d/x-full-1
-          x trim.tzst $C/x-trim-1
-          x trim.tzst /d/x-trim-1
-          x full.tzst $C/x-full-2
-          x full.tzst /d/x-full-2
-          x trim.tzst $C/x-trim-2
-          x trim.tzst /d/x-trim-2
-          echo DEFENDER-OFF
-          powershell -Command "Set-MpPreference -DisableRealtimeMonitoring \$true"
-          x full.tzst $C/x-full-3
-          x full.tzst /d/x-full-3
-          x trim.tzst $C/x-trim-3
-          x trim.tzst /d/x-trim-3
-      - run: |
-          t(){ local s=$EPOCHREALTIME; "$@"; echo "TIME $(awk "BEGIN{print $EPOCHREALTIME-$s}") :: $*"; }
-          cd "$RUNNER_TEMP"
-          t go version
-          GOMODCACHE=/d/gm GOTOOLCHAIN=go1.27.2 t go version
-          echo "files $(find /d/gm -type f | wc -l)"; du -sh /d/gm
-          tar -cf gm.tzst --use-compress-program "zstd -T0" -C /d/gm .
-          ls -l gm.tzst
-          mkdir -p /d/gm2; t tar -xf gm.tzst -P -C /d/gm2 --force-local --use-compress-program "zstd -d"
-          GOMODCACHE=/d/gm2 GOTOOLCHAIN=go1.27.2 t go version
+          mkdir -p "$RUNNER_TEMP/tmp"
+          echo "TMP=$RUNNER_TEMP\\tmp" >> "$GITHUB_ENV"
+          echo "TEMP=$RUNNER_TEMP\\tmp" >> "$GITHUB_ENV"
+          echo "LOCALAPPDATA=$RUNNER_TEMP\\appdata" >> "$GITHUB_ENV"
+      - run: go run ./cmd/release deps build -kind libs -target windows-amd64 -archive "$RUNNER_TEMP/libs.tar.gz" 2>&1 | grep -E "^\[[0-9]+/[0-9]+\]" | while IFS= read -r l; do echo "$(date +%T) $l"; done
