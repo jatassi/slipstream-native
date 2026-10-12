@@ -1,0 +1,41 @@
+name: probe
+on:
+  push:
+    branches: ["claude/**"]
+jobs:
+  windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          set -x
+          which bash cmake ninja make mingw32-make gmake perl gcc clang cl || true
+          cmake --version; perl -v | head -2; nproc
+          ls /c/ || true
+          ls /c/msys64/usr/bin | grep -E '^(make|perl|bash|sh)(\.exe)?$' || true
+          /c/msys64/usr/bin/pacman -Q 2>/dev/null | grep -E '^(make|perl|base-devel|diffutils) ' || true
+          ls /c/Strawberry/c/bin 2>/dev/null | head -50 || true
+          echo "PATH=$PATH"
+          gh release list -R mstorsjo/llvm-mingw -L 5
+          tag=$(gh release view -R mstorsjo/llvm-mingw --json tagName -q .tagName)
+          gh release view "$tag" -R mstorsjo/llvm-mingw --json assets -q '.assets[].name'
+          gh release download "$tag" -R mstorsjo/llvm-mingw -p "llvm-mingw-$tag-ucrt-x86_64.zip" -D dl
+          sha256sum dl/*; ls -la dl
+          unzip -l dl/*.zip | grep -i -E 'license|copying|readme' | head -40
+          unzip -l dl/*.zip | grep -E 'bin/x86_64-w64-mingw32-clang' | head
+          unzip -l dl/*.zip | grep -E 'x86_64-w64-mingw32/lib/lib(c\+\+|unwind|winpthread|pthread)' | head -20
+  macos:
+    runs-on: macos-15
+    steps:
+      - run: |
+          set -x
+          xcode-select -p; xcodebuild -version; ls /Applications | grep -i xcode
+          clang --version; cmake --version; which ninja make perl gmake; perl -v | head -2; sysctl -n hw.ncpu
+          arch -x86_64 /usr/bin/true && echo ROSETTA_OK || echo ROSETTA_MISSING
+          /usr/bin/pgrep -q oahd && echo oahd running || echo no oahd
+          xcrun --show-sdk-version; xcrun --show-sdk-path
+          ifconfig lo0
