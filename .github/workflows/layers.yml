@@ -17,7 +17,8 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     outputs:
-      matrix: ${{ steps.missing.outputs.matrix }}
+      toolchain: ${{ steps.missing.outputs.toolchain }}
+      libs: ${{ steps.missing.outputs.libs }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -28,14 +29,18 @@ jobs:
           go-version-file: go.mod
           cache: false
       - id: missing
-        run: echo "matrix=$(go run ./cmd/release deps missing)" >> "$GITHUB_OUTPUT"
+        run: |
+          missing=$(go run ./cmd/release deps missing)
+          for kind in toolchain libs; do
+            echo "$kind=$(echo "$missing" | jq -c ".$kind")" >> "$GITHUB_OUTPUT"
+          done
 
-  build:
+  toolchain:
     needs: plan
-    if: fromJSON(needs.plan.outputs.matrix).include[0] != null
+    if: fromJSON(needs.plan.outputs.toolchain).include[0] != null
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.toolchain) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
@@ -46,7 +51,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - run: go run ./cmd/release deps build -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
+      - run: go run ./cmd/release deps build -kind toolchain -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
@@ -54,29 +59,61 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  publish:
-    needs: [plan, build]
+  publish-toolchain:
+    needs: [plan, toolchain]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      MATRIX: ${{ needs.plan.outputs.matrix }}
+      MATRIX: ${{ needs.plan.outputs.toolchain }}
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
+          pattern: toolchain-*
           path: assets
           merge-multiple: true
-      - name: Publish each layer as its own release
-        run: |
-          echo "$MATRIX" | jq -c '.include[]' | while read -r layer; do
-            tag=$(echo "$layer" | jq -r .tag)
-            asset=$(echo "$layer" | jq -r .asset)
-            if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-              echo "$tag is already published; a published layer never changes"
-              continue
-            fi
-            gh release create "$tag" "assets/$asset" -R "$GITHUB_REPOSITORY" \
-              --prerelease --latest=false --title "$tag" \
-              --notes "$(echo "$layer" | jq -r .target) layer built from jatassi/SlipStream@$REF"
-          done
+      - run: .github/publish-layers.sh
+
+  libs:
+    needs: [plan, publish-toolchain]
+    if: ${{ !failure() && !cancelled() && fromJSON(needs.plan.outputs.libs).include[0] != null }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.libs) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: jatassi/SlipStream
+          ref: ${{ env.REF }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: curl -fsSL -o "$RUNNER_TEMP/toolchain.tar.gz" "${{ matrix.toolchain }}"
+      - run: go run ./cmd/release deps build -kind libs -target ${{ matrix.target }} -toolchain "$RUNNER_TEMP/toolchain.tar.gz" -archive "$RUNNER_TEMP/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ runner.temp }}/${{ matrix.asset }}
+          if-no-files-found: error
+          compression-level: 0
+
+  publish-libs:
+    needs: [plan, libs]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MATRIX: ${{ needs.plan.outputs.libs }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: libs-*
+          path: assets
+          merge-multiple: true
+      - run: .github/publish-layers.sh
