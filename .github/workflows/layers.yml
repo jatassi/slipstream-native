@@ -65,6 +65,7 @@ jobs:
 
   publish-toolchain:
     needs: [plan, toolchain]
+    if: ${{ !cancelled() && needs.toolchain.result != 'skipped' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -82,7 +83,7 @@ jobs:
 
   libs:
     needs: [plan, publish-toolchain]
-    if: ${{ !failure() && !cancelled() && fromJSON(needs.plan.outputs.libs).include[0] != null }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.publish-toolchain.result != 'failure' && fromJSON(needs.plan.outputs.libs).include[0] != null }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.libs) }}
@@ -113,6 +114,7 @@ jobs:
 
   publish-libs:
     needs: [plan, libs]
+    if: ${{ !cancelled() && needs.libs.result != 'skipped' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
