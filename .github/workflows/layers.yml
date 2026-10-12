@@ -6,14 +6,12 @@ on:
       ref:
         description: SlipStream branch or SHA whose native inputs and recipe to build
         required: true
-  push:
-    branches: ["claude/**"]
 
 permissions:
   contents: read
 
 env:
-  REF: ${{ inputs.ref || 'c2c8bd91c7f3b0346c940aa2ad483730dbbec7b9' }}
+  REF: ${{ inputs.ref }}
 
 jobs:
   plan:
