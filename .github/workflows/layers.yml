@@ -1,0 +1,84 @@
+name: layers
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: SlipStream branch or SHA whose native inputs and recipe to build
+        required: true
+  push:
+    branches: ["claude/**"]
+
+permissions:
+  contents: read
+
+env:
+  REF: ${{ inputs.ref || 'c2c8bd91c7f3b0346c940aa2ad483730dbbec7b9' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.missing.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: jatassi/SlipStream
+          ref: ${{ env.REF }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: missing
+        run: echo "matrix=$(go run ./cmd/release deps missing)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: fromJSON(needs.plan.outputs.matrix).include[0] != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: jatassi/SlipStream
+          ref: ${{ env.REF }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go run ./cmd/release deps build -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ runner.temp }}/${{ matrix.asset }}
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MATRIX: ${{ needs.plan.outputs.matrix }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish each layer as its own release
+        run: |
+          echo "$MATRIX" | jq -c '.include[]' | while read -r layer; do
+            tag=$(echo "$layer" | jq -r .tag)
+            asset=$(echo "$layer" | jq -r .asset)
+            if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "$tag is already published; a published layer never changes"
+              continue
+            fi
+            gh release create "$tag" "assets/$asset" -R "$GITHUB_REPOSITORY" \
+              --prerelease --latest=false --title "$tag" \
+              --notes "$(echo "$layer" | jq -r .target) layer built from jatassi/SlipStream@$REF"
+          done
