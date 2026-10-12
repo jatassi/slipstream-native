@@ -13,6 +13,10 @@ permissions:
 env:
   REF: ${{ inputs.ref }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   plan:
     runs-on: ubuntu-24.04
@@ -92,8 +96,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - run: curl -fsSL -o "$RUNNER_TEMP/toolchain.tar.gz" "${{ matrix.toolchain }}"
-      - run: go run ./cmd/release deps build -kind libs -target ${{ matrix.target }} -toolchain "$RUNNER_TEMP/toolchain.tar.gz" -archive "$RUNNER_TEMP/${{ matrix.asset }}"
+      - if: matrix.xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer" >> "$GITHUB_ENV"
+      # OpenSSL builds for MinGW only with an MSYS2 perl and make.
+      - if: runner.os == 'Windows'
+        run: |
+          /c/msys64/usr/bin/pacman -S --noconfirm --needed make perl
+          echo 'C:\msys64\usr\bin' >> "$GITHUB_PATH"
+      - run: go run ./cmd/release deps build -kind libs -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
