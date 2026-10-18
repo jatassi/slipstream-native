@@ -24,11 +24,11 @@ jobs:
       toolchain: ${{ steps.missing.outputs.toolchain }}
       libs: ${{ steps.missing.outputs.libs }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: jatassi/SlipStream
           ref: ${{ env.REF }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false
@@ -47,16 +47,16 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.toolchain) }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: jatassi/SlipStream
           ref: ${{ env.REF }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false
       - run: go run ./cmd/release deps build -kind toolchain -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: ${{ runner.temp }}/${{ matrix.asset }}
@@ -73,8 +73,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       MATRIX: ${{ needs.plan.outputs.toolchain }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: toolchain-*
           path: assets
@@ -89,11 +89,11 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.libs) }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: jatassi/SlipStream
           ref: ${{ env.REF }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false
@@ -105,7 +105,7 @@ jobs:
           /c/msys64/usr/bin/pacman -S --noconfirm --needed make perl
           echo 'C:\msys64\usr\bin' >> "$GITHUB_PATH"
       - run: go run ./cmd/release deps build -kind libs -target ${{ matrix.target }} -archive "$RUNNER_TEMP/${{ matrix.asset }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: ${{ runner.temp }}/${{ matrix.asset }}
@@ -122,8 +122,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       MATRIX: ${{ needs.plan.outputs.libs }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: libs-*
           path: assets
